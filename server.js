@@ -2,12 +2,11 @@
 const express = require("express");
 const app = express();
 const mongoose = require("mongoose");
-const User = require('./models/user'); //import path for schema
+const User = require('./models/user'); //import path for userschema
+const Product = require('./models/product');
 const bcrypt = require("bcrypt");
 const secretKey = "secret_key";
 const jwt = require("jsonwebtoken")
-const moment = require("moment");
-
 
 // use middleware to parse JSON
 app.use(express.json());
@@ -32,19 +31,20 @@ app.get(`/users`, verifyToken, async (req, res) => {
 // findOne
 app.get(`/findOne/user`, verifyToken, async (req, res) => {
     try {
-        const userId = req.body._id; 
-        const foundUser = await User.findOne({ _id: userId }); 
+        const userId = req.user.userId; 
         if (!userId) { 
             return res.status(404).json({ message: 'please provide userId.' });
-        };
+        };        
+        const foundUser = await User.findOne({ _id: userId }).select('-password');         
         if (!foundUser) { 
             return res.status(404).json({ message: 'User not found' });
-        };
+        };        
         res.status(200).json({ message: "user found:", data: foundUser });
-        } catch (error) {
+    } catch (error) {
         res.status(500).json({ message: error.message }); 
     }
 });
+
 
 
 // update:
@@ -200,7 +200,7 @@ app.post(`/login/user`, async (req, res) => {
 
 // verify Token
 function verifyToken(req, res, next) {
-    let token = req.headers.authorization; // Corrected
+    let token = req.headers.authorization; 
     console.log(token);
     if (!token) {
       return res.status(401).json({ message: "Unauthorized! Token not provided." });
@@ -210,10 +210,91 @@ function verifyToken(req, res, next) {
       if (error) {
         return res.status(401).json({ message: "Unauthorized: Invalid token" });
       }
-      req.user = decoded.user;
+      req.user = decoded;
+      console.log("verified userID: ", req.user);
       next();
     });
 };
+
+
+// Add product
+app.post(`/products`, verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId; 
+        console.log("userId from token", userId);
+        
+        const { productname, quantity, price } = req.body;
+
+        const product = new Product({
+            productname,
+            userId : userId,
+            quantity,
+            price
+        });
+
+        await product.save();
+
+        // Update user's orderedProducts field
+        const user = await User.findById(userId);
+        console.log("user is:" , user)
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        user.orderedProducts.push(product._id);
+        await user.save();
+
+        res.status(201).json({ message: 'Product added successfully', product});
+    } catch (error) {
+        console.error("Error:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// list products:
+app.get(`/list/products`,verifyToken, async (req, res)=>{
+    try {
+        const orders = await Product.find({});   
+        res.status(200).json({ message: 'List of all orders:', orders });
+        if(!orders || orders.length=== 0){
+            return res.status(404).json({message: 'no orders found.'})
+        }
+    } catch (error) {
+        res.status(500).json(error.message);
+    }
+});
+ 
+
+// Find one product by ID
+app.get(`/products/findOne`, verifyToken, async(req, res) => {
+    try {
+        const productId = req.body._id; 
+        if (!productId) {
+            return res.status(400).json({ message: 'Product ID is required' });
+        }
+        const product = await Product.findById(productId);
+        if (!product) {
+            return res.status(404).json({ message: 'Product not found' });
+        }
+        res.status(200).json({ message: 'Product found:', product });
+    } catch (error) {
+        res.status(500).json({ message: error.message }); 
+    }
+});
+
+// List products ordered by logged-in user
+app.get(`/list/my-products`, verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId; 
+        console.log("userid at list products",userId);
+        const products = await Product.find({ userId });
+        if (!products || products.length === 0) {
+            return res.status(404).json({ message: 'No products found for the current user' });
+        }
+        res.status(200).json({ message: 'List of products ordered by the current user:', products });
+    } catch (error) {
+        res.status(500).json({ message: error.message }); 
+    }
+});
 
 
 

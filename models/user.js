@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
     DOB: {
         type: Date,
     },
+    orderedProducts:[{
+        type:mongoose.Schema.Types.ObjectId,
+        ref:'Product'
+    }],
     token:{
         type:String,
     }
